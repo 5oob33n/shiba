@@ -1,9 +1,6 @@
 let paintLayer;
 let shibaModel; // 3D 시바견 모델
 let shibaTexture; // 텍스처 이미지
-let alpha = 0;
-let beta = 0;
-let gamma = 0;
 let exploredRegions = [];
 let discoveryMessage = "";
 let discoveryTimer = 0;
@@ -22,8 +19,11 @@ function isMobileDevice() {
 
 function preload() {
   // 3D 모델과 텍스처 이미지 로드
-  shibaModel = loadModel('Shiba.obj', true); 
-  shibaTexture = loadImage('shiba_texture.png'); 
+  shibaModel = loadModel('Shiba.obj', true); // 실제 업로드한 파일명으로 변경
+  shibaTexture = loadImage('shiba_texture.png'); // 실제 업로드한 텍스처 파일명으로 변경
+  
+  // 폰트 로드 (필요 시 추가)
+  // myFont = loadFont('PressStart2P.ttf'); // 프로젝트에 맞는 폰트 파일명으로 변경
 }
 
 function setup() {
@@ -38,9 +38,6 @@ function setup() {
   if (localStorage.getItem('exploredRegions')) {
     exploredRegions = JSON.parse(localStorage.getItem('exploredRegions'));
   }
-  
-  // 위치 초기화
-  previousPosition = null;
   
   // 디바이스 유형 감지 및 위치 추적
   if (isMobileDevice()) {
@@ -72,19 +69,6 @@ function setup() {
 function draw() {
   background(255); // 하얀 배경
   
-  // 탑뷰 카메라 설정
-  camera(0, 500, 0, 0, 0, 0, 0, 0, -1);
-  
-  // paintLayer 표시 (2D 레이어)
-  push();
-  resetMatrix();
-  translate(-width / 2, -height / 2);
-  image(paintLayer, 0, 0);
-  pop();
-  
-  // 그라데이션 효과 적용
-  applyGradientEffect();
-  
   // 자연 요소 그리기
   drawNaturalElements();
   
@@ -93,10 +77,11 @@ function draw() {
   
   // 3D 시바견 모델 그리기
   push();
-  translate(0, 0, 0); // 중앙에 배치
-  
-  // 모델의 방향 수정 (나침반 방향에 따라 Y축 회전)
-  rotateY(radians(currentAzimuth));
+  translate(0, 0, 0); // 중앙에 고정
+
+  // 모델을 위쪽을 향하게 회전하고, currentAzimuth에 따라 Y축 회전
+  rotateX(HALF_PI); // 모델을 위로 향하게 회전
+  rotateY(radians(currentAzimuth)); // 현재 방위각에 따라 회전
   
   scale(0.5); // 모델 크기 조절
   
@@ -107,6 +92,13 @@ function draw() {
   
   noStroke();
   model(shibaModel);
+  pop();
+  
+  // paintLayer 표시 (2D 레이어) - 모델 그린 후 그려서 그라데이션이 보이도록 함
+  push();
+  resetMatrix();
+  translate(-width / 2, -height / 2);
+  image(paintLayer, 0, 0);
   pop();
   
   // 발견 메시지 표시
@@ -131,12 +123,24 @@ function draw() {
 }
 
 function handleOrientation(event) {
-  alpha = event.alpha;
-  beta = event.beta;
-  gamma = event.gamma;
+  let alpha = event.alpha;
+  let beta = event.beta;
+  let gamma = event.gamma;
   
-  // 방위각 계산 (간단한 예시)
+  // 방위각 계산 (나침반 0도는 위쪽을 향하도록 조정)
   currentAzimuth = alpha;
+  
+  // currentAzimuth를 [0, 360) 범위로 정규화
+  currentAzimuth = (currentAzimuth + 360) % 360;
+  
+  // 모바일 기기에서 이동 시 그라데이션 적용 (필요 시 수정)
+  if (isMobileDevice() && previousPosition) {
+    // 실제 이동 거리를 계산하는 로직 필요
+    // 여기서는 예시로 고정된 거리 사용
+    let distance = calculateDistance(previousPosition.latitude, previousPosition.longitude, previousPosition.latitude + 0.001, previousPosition.longitude + 0.001); // 예시 거리 계산
+    movedDistance += distance;
+    applyGradientEffect(distance, currentAzimuth);
+  }
 }
 
 function updatePosition(position) {
@@ -147,6 +151,12 @@ function updatePosition(position) {
     let distance = calculateDistance(previousPosition.latitude, previousPosition.longitude, latitude, longitude);
     movedDistance += distance;
     currentAzimuth = calculateBearing(previousPosition.latitude, previousPosition.longitude, latitude, longitude);
+    
+    // currentAzimuth를 [0, 360) 범위로 정규화
+    currentAzimuth = (currentAzimuth + 360) % 360;
+    
+    // 그라데이션 효과 적용
+    applyGradientEffect(distance, currentAzimuth);
   }
   
   previousPosition = {
@@ -202,11 +212,7 @@ function calculateBearing(lat1, lon1, lat2, lon2) {
   return bearing;
 }
 
-function applyGradientEffect() {
-  if (currentRegion !== 'forest' && currentRegion !== 'sea' && currentRegion !== 'desert') {
-    return;
-  }
-
+function applyGradientEffect(distance, azimuth) {
   // 현재 지역에 맞는 색상 선택
   let currentColor;
   
@@ -216,26 +222,32 @@ function applyGradientEffect() {
     currentColor = color(30, 144, 255, 150); // 파란색
   } else if (currentRegion === 'desert') {
     currentColor = color(50, 205, 50, 150); // 라임색
+  } else {
+    currentColor = color(200, 200, 200, 150); // 회색
   }
 
-  // 이동 거리에 따른 그라데이션 크기 설정
-  let gradientSize = map(movedDistance, 0, 1000, 0, sqrt(sq(width) + sq(height)));
+  // 이동 거리에 따른 그라데이션 크기 설정 (조정: 0-500 -> 0-300)
+  let gradientSize = map(distance, 0, 500, 0, 300);
+  gradientSize = constrain(gradientSize, 0, 300); // 최대 300으로 제한
   
-  // 방위각을 이용해 그라데이션 위치 계산
-  let directionRadians = radians(currentAzimuth);
+  // 방위각을 이용해 그라데이션 위치 계산 (나침반 0도가 위쪽을 향하도록 조정)
+  let directionRadians = radians(azimuth - 90);
   let xOffset = cos(directionRadians) * gradientSize;
   let yOffset = sin(directionRadians) * gradientSize;
-
-  // 여러 개의 반투명 원을 그려 그라데이션 효과 구현
+  
+  console.log(`Drawing gradient at (${width / 2 + xOffset}, ${height / 2 + yOffset}) with size ${gradientSize}`);
+  
+  // 그라데이션 그리기
   for (let i = 0; i < 10; i++) {
     let size = map(i, 0, 10, gradientSize / 10, gradientSize);
-    let alphaVal = map(i, 0, 10, 50, 0); // 점점 투명해지도록 설정
+    let alphaVal = map(i, 0, 10, 200, 0); // 점점 투명해지도록 설정
     paintLayer.fill(red(currentColor), green(currentColor), blue(currentColor), alphaVal);
-    paintLayer.ellipse(xOffset + width / 2, yOffset + height / 2, size, size);
+    paintLayer.ellipse(width / 2 + xOffset, height / 2 + yOffset, size, size);
   }
 }
 
 function getCurrentRegion() {
+  // 방위각을 기준으로 지역 결정
   if (currentAzimuth >= 0 && currentAzimuth < 120) {
     return 'forest';
   } else if (currentAzimuth >= 120 && currentAzimuth < 240) {
@@ -286,14 +298,14 @@ function drawCurrentLocation() {
   if (currentRegion === 'forest') {
     currentLocationColor = color(34, 139, 34, 200); // 진한 초록색
   } else if (currentRegion === 'sea') {
-    currentLocationColor = color(30, 144, 255, 200); // 진한 파란색
+    currentLocationColor = color(30, 144, 255, 200); // 진한 하늘색
   } else if (currentRegion === 'desert') {
     currentLocationColor = color(50, 205, 50, 200); // 진한 라임색
   } else {
-    currentLocationColor = color(200, 200, 200, 200); // 기본 회색
+    currentLocationColor = color(200, 200, 200, 200); // 회색
   }
   
-  // 현재 위치 표시 (중앙)
+  // 현재 위치 표시 (2D 레이어의 중앙)
   paintLayer.noStroke();
   paintLayer.fill(currentLocationColor);
   paintLayer.ellipse(width / 2, height / 2, 50, 50); // 크기 조절 가능
@@ -310,45 +322,44 @@ function windowResized() {
   console.log(`Canvas resized to: ${windowWidth}x${windowHeight}`);
 }
 
-// 데스크탑용 마우스 움직임으로 현재 방위각 업데이트
-function mouseMoved() {
-  if (!isMobileDevice()) {
-    currentAzimuth = map(mouseX, 0, width, 0, 360);
-  }
-  
-  // 데스크탑에서 키보드 입력으로 이동 시뮬레이션
-  if (isSimulating) {
-    // 예시: 화살표 키를 누르면 이동 거리 증가
-    // 이 부분은 키보드 이벤트 핸들링으로 구현 가능
-  }
-}
-
+// 키보드 입력으로 이동 시뮬레이션 및 그라데이션 효과 적용
 function keyPressed() {
   if (isSimulating) {
-    let moveStep = 10; // 이동할 거리
+    let moveStep = 10; // 이동할 거리 (미터 단위로 가정)
+    let azimuth = currentAzimuth; // 현재 방향 유지
     switch (keyCode) {
       case LEFT_ARROW:
         simulatedPosition.longitude -= 0.001; // 이동 시뮬레이션
-        currentAzimuth = 270;
+        azimuth = 270;
         movedDistance += moveStep;
         break;
       case RIGHT_ARROW:
         simulatedPosition.longitude += 0.001;
-        currentAzimuth = 90;
+        azimuth = 90;
         movedDistance += moveStep;
         break;
       case UP_ARROW:
         simulatedPosition.latitude += 0.001;
-        currentAzimuth = 0;
+        azimuth = 0;
         movedDistance += moveStep;
         break;
       case DOWN_ARROW:
         simulatedPosition.latitude -= 0.001;
-        currentAzimuth = 180;
+        azimuth = 180;
         movedDistance += moveStep;
         break;
     }
+    currentAzimuth = azimuth;
+    
+    // currentAzimuth를 [0, 360) 범위로 정규화
+    currentAzimuth = (currentAzimuth + 360) % 360;
+    
     currentRegion = getCurrentRegion();
+    
+    // 그라데이션 효과 적용
+    applyGradientEffect(moveStep, currentAzimuth);
+    
+    console.log(`Moved Distance: ${movedDistance}, Current Azimuth: ${currentAzimuth}`);
   }
 }
 
