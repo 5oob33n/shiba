@@ -112,7 +112,7 @@ function draw() {
   rotateX(HALF_PI); // Rotate model to face upwards
   rotateY(radians(currentAzimuth)); // Rotate based on current azimuth
 
-  scale(0.7); // Adjust model size
+  scale(0.5); // Adjust model size
 
   // Apply texture if loaded
   if (shibaTexture && shibaModel) {
